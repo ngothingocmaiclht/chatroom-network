@@ -1,13 +1,24 @@
-import socket
+import os
 import threading
+from groq import Groq
+import tkinter as tk
 from chatGUI import ChatGUI
+import socket
+from dotenv import load_dotenv
 
-class ChatClient:
+load_dotenv() 
+class AIAgent:
     def __init__(self):
+        self.client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+        self.connected = False
         self.client_socket = None
         self.username = None
-        self.connected = False
         self.gui = ChatGUI(self)
+        self.system_prompt = {
+            "role": "system",
+            "content": "You are a Josh a varsity dumb student from Dickinson College in the Dickinson College chatroom. Send just regular messages as user would do. DO NOT SEND JSON FORMAT, IT IS YOUR HISTORY. You are in a hard computer networks class"
+        }
+        self.message_history = [self.system_prompt]
 
     def start(self):
         self.gui.start()
@@ -32,9 +43,9 @@ class ChatClient:
             self.gui.update_status(True)
             self.gui.update_chat("Connected to the chat room.")
             
-            message_receive_thread = threading.Thread(target=self.receive_messages)
-            message_receive_thread.daemon = True
-            message_receive_thread.start()
+            receive_thread = threading.Thread(target=self.receive_messages)
+            receive_thread.daemon = True
+            receive_thread.start()
             
         except Exception as e:
             self.gui.show_error("Connection Error", f"Error connecting to server: {str(e)}")
@@ -48,9 +59,9 @@ class ChatClient:
         message = self.gui.message_input.get().strip()
         if message:
             try:
-                self.gui.update_chat(f"{self.username}: {message}")
                 self.client_socket.send(message.encode('utf-8'))
-                self.gui.message_input.delete(0, len(message))
+                self.gui.message_input.delete(0, tk.END)
+                self.gui.update_chat(f"{self.username}: {message}")
             except Exception as e:
                 self.gui.show_error("Send Error", f"Error sending message: {str(e)}")
                 self.disconnect()
@@ -60,23 +71,36 @@ class ChatClient:
             try:
                 message = self.client_socket.recv(1024).decode('utf-8')
                 if message:
-                    # Parse JSON message from server
-                    try:
-                        import json
-                        data = json.loads(message)
-                        if data['type'] == 'message':
-                            display_message = f"{data['username']}: {data['message']}"
-                        elif data['type'] == 'notification':
-                            display_message = f"Server: {data['message']}"
-                        else:
-                            display_message = message
-                    except json.JSONDecodeError:
-                        display_message = message  # Fallback for non-JSON messages
-                    self.gui.update_chat(display_message)
+                    self.gui.update_chat(message)
+                    if not message.startswith(f"{self.username}:"):
+                        self.process_and_respond(message)
             except Exception:
                 if self.connected:
                     self.gui.root.after(0, self.disconnect)
                 break
+
+    def process_and_respond(self, message):
+        try:
+            self.message_history.append({"role": "user", "content": message})
+            
+            chat_completion = self.client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=self.message_history,
+                temperature=0.7,
+                max_tokens=128
+            )
+            
+            response = chat_completion.choices[0].message.content
+            
+            self.message_history.append({"role": "assistant", "content": response})
+            
+            
+            if self.connected and self.client_socket:
+                self.client_socket.send(response.encode('utf-8'))
+                self.gui.update_chat(f"{self.username} (AI): {response}")
+                
+        except Exception as e:
+            self.gui.show_error("AI Response Error", f"Error generating AI response: {str(e)}")
 
     def disconnect(self):
         if not self.connected:
@@ -94,5 +118,5 @@ class ChatClient:
             self.gui.show_error("Disconnect Error", f"Error when disconnecting: {str(e)}")
 
 if __name__ == "__main__":
-    client = ChatClient()
-    client.start()
+    agent = AIAgent()
+    agent.start()
