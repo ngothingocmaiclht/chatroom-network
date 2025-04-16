@@ -18,23 +18,28 @@ class ChatClient:
             return
         
         try:
-            self.username = self.gui.get_username()
-            if not self.username:
-                self.gui.show_error("Invalid", "Please enter a valid name.")
+            self.username, password = self.gui.get_credentials()
+            if not self.username or not password:
+                self.gui.show_error("Invalid", "Please enter both username and password.")
                 return
             
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.connect(('127.0.0.1', 9501))
             
-            self.client_socket.send(f"Username:{self.username}".encode('utf-8'))
+            self.client_socket.send(f"Login:{self.username}:{password}".encode('utf-8'))
+            response = self.client_socket.recv(1024).decode('utf-8')
             
-            self.connected = True
-            self.gui.update_status(True)
-            self.gui.update_chat("Connected to the chat room.")
-            
-            message_receive_thread = threading.Thread(target=self.receive_messages)
-            message_receive_thread.daemon = True
-            message_receive_thread.start()
+            if response == "Login:Success":
+                self.connected = True
+                self.gui.update_status(True)
+                self.gui.update_chat("Connected to the chat room.")
+                
+                message_receive_thread = threading.Thread(target=self.receive_messages)
+                message_receive_thread.daemon = True
+                message_receive_thread.start()
+            else:
+                self.gui.show_error("Login Failed", "Invalid username or password.")
+                self.disconnect()
             
         except Exception as e:
             self.gui.show_error("Connection Error", f"Error connecting to server: {str(e)}")
@@ -60,7 +65,6 @@ class ChatClient:
             try:
                 message = self.client_socket.recv(1024).decode('utf-8')
                 if message:
-                    # Parse JSON message from server
                     try:
                         import json
                         data = json.loads(message)
@@ -71,7 +75,7 @@ class ChatClient:
                         else:
                             display_message = message
                     except json.JSONDecodeError:
-                        display_message = message  # Fallback for non-JSON messages
+                        display_message = message
                     self.gui.update_chat(display_message)
             except Exception:
                 if self.connected:

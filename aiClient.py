@@ -29,23 +29,28 @@ class AIAgent:
             return
         
         try:
-            self.username = self.gui.get_username()
-            if not self.username:
-                self.gui.show_error("Invalid", "Please enter a valid name.")
+            self.username, password = self.gui.get_credentials()
+            if not self.username or not password:
+                self.gui.show_error("Invalid", "Please enter both username and password.")
                 return
             
             self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.client_socket.connect(('127.0.0.1', 9501))
             
-            self.client_socket.send(f"Username:{self.username}".encode('utf-8'))
+            self.client_socket.send(f"Login:{self.username}:{password}".encode('utf-8'))
+            response = self.client_socket.recv(1024).decode('utf-8')
             
-            self.connected = True
-            self.gui.update_status(True)
-            self.gui.update_chat("Connected to the chat room.")
-            
-            receive_thread = threading.Thread(target=self.receive_messages)
-            receive_thread.daemon = True
-            receive_thread.start()
+            if response == "Login:Success":
+                self.connected = True
+                self.gui.update_status(True)
+                self.gui.update_chat("Connected to the chat room.")
+                
+                receive_thread = threading.Thread(target=self.receive_messages)
+                receive_thread.daemon = True
+                receive_thread.start()
+            else:
+                self.gui.show_error("Login Failed", "Invalid username or password.")
+                self.disconnect()
             
         except Exception as e:
             self.gui.show_error("Connection Error", f"Error connecting to server: {str(e)}")
@@ -93,7 +98,6 @@ class AIAgent:
             response = chat_completion.choices[0].message.content
             
             self.message_history.append({"role": "assistant", "content": response})
-            
             
             if self.connected and self.client_socket:
                 self.client_socket.send(response.encode('utf-8'))

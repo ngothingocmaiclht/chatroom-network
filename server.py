@@ -5,7 +5,7 @@ import json
 class ChatServer:
     def __init__(self):
         self.host = '127.0.0.1'
-        self.port = 9501  # Matches client
+        self.port = 9501
         self.clients = {}
         
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -30,24 +30,54 @@ class ChatServer:
             try:
                 client_socket, _ = self.server_socket.accept()
                 
-                username_data = client_socket.recv(1024).decode('utf-8')
-                if not username_data.startswith("Username:"):
+                login_data = client_socket.recv(1024).decode('utf-8')
+                if not login_data.startswith("Login:"):
+                    client_socket.send("Invalid login format".encode('utf-8'))
                     client_socket.close()
                     continue
-                username = username_data.split(":", 1)[1].strip()
-                self.clients[client_socket] = username
                 
-                connect_message = json.dumps({
-                    'type': 'notification',
-                    'message': f'{username} has joined the chat'
-                }).encode('utf-8')
-                self.broadcast(connect_message, client_socket)
+                parts = login_data.split(":", 2)
+                if len(parts) != 3:
+                    client_socket.send("Invalid login format".encode('utf-8'))
+                    client_socket.close()
+                    continue
                 
-                client_thread = threading.Thread(target=self.handle_client, args=(client_socket,))
-                client_thread.daemon = True
-                client_thread.start()
+                username = parts[1].strip()
+                password = parts[2].strip()
+                
+                if self.authenticate(username, password):
+                    client_socket.send("Login:Success".encode('utf-8'))
+                    self.clients[client_socket] = username
+                    
+                    connect_message = json.dumps({
+                        'type': 'notification',
+                        'message': f'{username} has joined the chat'
+                    }).encode('utf-8')
+                    self.broadcast(connect_message, client_socket)
+                    
+                    client_thread = threading.Thread(target=self.handle_client, args=(client_socket,))
+                    client_thread.daemon = True
+                    client_thread.start()
+                else:
+                    client_socket.send("Login:Failed".encode('utf-8'))
+                    client_socket.close()
             except Exception as e:
                 print(f"Error accepting connection: {str(e)}")
+
+    def authenticate(self, username, password):
+        try:
+            with open("users.txt", "r") as f:
+                for line in f:
+                    stored_username, stored_password = line.strip().split(":")
+                    if stored_username == username and stored_password == password:
+                        return True
+            return False
+        except FileNotFoundError:
+            print("users.txt not found")
+            return False
+        except Exception as e:
+            print(f"Error reading users.txt: {str(e)}")
+            return False
 
     def handle_client(self, client_socket):
         while True:
@@ -95,7 +125,7 @@ class ChatServer:
         for client in list(self.clients.keys()):
             self.remove_client(client)
         self.server_socket.close()
-
+        
 if __name__ == "__main__":
     server = ChatServer()
     server.start()

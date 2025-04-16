@@ -57,5 +57,9 @@ class ChatGUI:
     def show_info(self, title, message):
         self.root.after(0, lambda: messagebox.showinfo(title, message))
 
-    def get_username(self):
-        return simpledialog.askstring("Username", "Please give yourself a name:", parent=self.root)
+    def get_credentials(self):
+        username = simpledialog.askstring("Username", "Enter your username:", parent=self.root)
+        if not username:
+            return None, None
+        password = simpledialog.askstring("Password", "Enter your password:", parent=self.root, show='*')
+        return username, password
